@@ -5,10 +5,10 @@
   <title>Retro LCD Photo Editor (HTML)</title>
   <style>
     body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
-    canvas { border: 1px solid #666; margin-top: 10px; max-width: 100%; height: auto; }
+    canvas { border: 1px solid #666; margin-top: 10px; max-width: 100%; height: auto; transform: scale(2); transform-origin: top left; }
     .controls { margin: 10px auto; width: 80%; text-align: left; max-width: 1000px; }
-    .slider-group, .preset-group { margin: 10px 0; }
-    input[type=range], select { width: 100%; }
+    .slider-group, .text-group { margin: 10px 0; }
+    input[type=range], input[type=text], select { width: 100%; }
   </style>
 </head>
 <body>
@@ -30,22 +30,29 @@
       <input type="range" id="lines" min="0" max="255" value="30">
     </div>
     <div class="slider-group">
-      <label>Lens Distortion (Radial): <span id="lensVal">0</span></label>
-      <input type="range" id="lens" min="-1" max="1" step="0.01" value="0">
+      <label>Glitch Strength: <span id="glitchVal">5</span></label>
+      <input type="range" id="glitch" min="0" max="30" value="5">
+    </div>
+    <div class="slider-group">
+      <label>Grid Noise Overlay (Intensity): <span id="gridVal">10</span></label>
+      <input type="range" id="grid" min="0" max="100" value="10">
     </div>
     <div class="slider-group">
       <label>Noise Color (RGB Tint):</label>
       <input type="color" id="noiseColor" value="#ff0000">
     </div>
-    <div class="preset-group">
-      <label>Presets:</label>
-      <select id="preset">
-        <option value="custom">-- Custom --</option>
-        <option value="lcd">LCD Classic</option>
-        <option value="security">Security Cam</option>
-        <option value="vhs">VHS Distortion</option>
-      </select>
+
+    <div class="text-group">
+      <label>Caption Text:</label>
+      <input type="text" id="captionText" value="THE TRUTH IS OUT THERE">
+      <label>Text Glitch Strength: <span id="captionGlitchVal">3</span></label>
+      <input type="range" id="captionGlitch" min="0" max="20" value="3">
+      <label>Caption X Position (%): <span id="captionXVal">50</span></label>
+      <input type="range" id="captionX" min="0" max="100" value="50">
+      <label>Caption Y Position (%): <span id="captionYVal">90</span></label>
+      <input type="range" id="captionY" min="0" max="100" value="90">
     </div>
+
     <button id="save">💾 Save Image</button>
   </div>
 
@@ -57,76 +64,39 @@
     const noiseSlider = document.getElementById('noise');
     const qualitySlider = document.getElementById('quality');
     const linesSlider = document.getElementById('lines');
-    const lensSlider = document.getElementById('lens');
+    const glitchSlider = document.getElementById('glitch');
+    const gridSlider = document.getElementById('grid');
     const noiseColorInput = document.getElementById('noiseColor');
-    const presetSelect = document.getElementById('preset');
+    const captionText = document.getElementById('captionText');
+    const captionGlitch = document.getElementById('captionGlitch');
+    const captionX = document.getElementById('captionX');
+    const captionY = document.getElementById('captionY');
 
-    document.getElementById('noise').oninput = () => document.getElementById('noiseVal').innerText = noiseSlider.value;
-    document.getElementById('quality').oninput = () => document.getElementById('qualityVal').innerText = qualitySlider.value;
-    document.getElementById('lines').oninput = () => document.getElementById('linesVal').innerText = linesSlider.value;
-    document.getElementById('lens').oninput = () => document.getElementById('lensVal').innerText = lensSlider.value;
-
-    presetSelect.onchange = () => {
-      const preset = presetSelect.value;
-      if (preset === 'lcd') {
-        noiseSlider.value = 10;
-        qualitySlider.value = 4;
-        linesSlider.value = 20;
-        lensSlider.value = 0;
-        noiseColorInput.value = '#00ff00';
-      } else if (preset === 'security') {
-        noiseSlider.value = 25;
-        qualitySlider.value = 8;
-        linesSlider.value = 40;
-        lensSlider.value = -0.3;
-        noiseColorInput.value = '#ffffff';
-      } else if (preset === 'vhs') {
-        noiseSlider.value = 35;
-        qualitySlider.value = 6;
-        linesSlider.value = 60;
-        lensSlider.value = 0.5;
-        noiseColorInput.value = '#ff00ff';
-      }
-      applyEffects();
-    };
-
-    function applyLensDistortion(imgData, strength) {
-      if (strength === 0) return imgData;
-      const w = imgData.width;
-      const h = imgData.height;
-      const src = imgData.data;
-      const output = new Uint8ClampedArray(src.length);
-      const cx = w / 2;
-      const cy = h / 2;
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const dx = x - cx;
-          const dy = y - cy;
-          const r = Math.sqrt(dx * dx + dy * dy);
-          const factor = 1 + strength * (r / Math.max(cx, cy)) ** 2;
-          const sx = Math.round(cx + dx / factor);
-          const sy = Math.round(cy + dy / factor);
-          if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
-            const dstIdx = (y * w + x) * 4;
-            const srcIdx = (sy * w + sx) * 4;
-            output[dstIdx] = src[srcIdx];
-            output[dstIdx+1] = src[srcIdx+1];
-            output[dstIdx+2] = src[srcIdx+2];
-            output[dstIdx+3] = src[srcIdx+3];
-          }
-        }
-      }
-      imgData.data.set(output);
-      return imgData;
+    function updateValues() {
+      document.getElementById('noiseVal').innerText = noiseSlider.value;
+      document.getElementById('qualityVal').innerText = qualitySlider.value;
+      document.getElementById('linesVal').innerText = linesSlider.value;
+      document.getElementById('glitchVal').innerText = glitchSlider.value;
+      document.getElementById('gridVal').innerText = gridSlider.value;
+      document.getElementById('captionGlitchVal').innerText = captionGlitch.value;
+      document.getElementById('captionXVal').innerText = captionX.value;
+      document.getElementById('captionYVal').innerText = captionY.value;
     }
 
     function applyEffects() {
       if (!originalImage) return;
+      updateValues();
+
       const quality = parseInt(qualitySlider.value);
       const noiseLevel = parseInt(noiseSlider.value);
       const lineIntensity = parseInt(linesSlider.value);
+      const glitchStrength = parseInt(glitchSlider.value);
+      const gridIntensity = parseInt(gridSlider.value);
       const noiseColor = hexToRgb(noiseColorInput.value);
-      const lens = parseFloat(lensSlider.value);
+      const caption = captionText.value;
+      const captionXPercent = parseInt(captionX.value);
+      const captionYPercent = parseInt(captionY.value);
+      const captionGlitchLevel = parseInt(captionGlitch.value);
 
       const w = originalImage.naturalWidth;
       const h = originalImage.naturalHeight;
@@ -163,12 +133,40 @@
         }
       }
 
-      imgData = applyLensDistortion(imgData, lens);
+      // Static grid overlay
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if ((x + y) % 4 === 0) {
+            const idx = (y * w + x) * 4;
+            data[idx] = Math.min(255, data[idx] + gridIntensity);
+            data[idx+1] = Math.min(255, data[idx+1] + gridIntensity);
+            data[idx+2] = Math.min(255, data[idx+2] + gridIntensity);
+          }
+        }
+      }
+
       ctx.putImageData(imgData, 0, 0);
 
+      // Timestamp
       ctx.fillStyle = 'white';
-      ctx.font = '16px monospace';
-      ctx.fillText(new Date().toLocaleString(), 10, 20);
+      ctx.font = '20px monospace';
+      const ts = new Date().toLocaleString();
+      ctx.fillText(ts, 10, h - 40);
+
+      // Caption
+      ctx.font = '32px Impact, sans-serif';
+      ctx.fillStyle = 'yellow';
+      const cx = (captionXPercent / 100) * w;
+      const cy = (captionYPercent / 100) * h;
+      ctx.fillText(caption, cx, cy);
+
+      // Apply glitch to caption
+      let captionData = ctx.getImageData(cx, cy - 30, w - cx, 40);
+      for (let i = 0; i < captionGlitchLevel; i++) {
+        const ry = Math.floor(Math.random() * captionData.height);
+        const slice = ctx.getImageData(cx, cy - 30 + ry, captionData.width, 1);
+        ctx.putImageData(slice, cx + Math.floor(Math.random() * 10 - 5), cy - 30 + ry);
+      }
     }
 
     document.getElementById('upload').onchange = function(e) {
@@ -184,17 +182,15 @@
       reader.readAsDataURL(e.target.files[0]);
     };
 
-    [noiseSlider, qualitySlider, linesSlider, lensSlider, noiseColorInput].forEach(el => {
-      el.addEventListener('input', () => {
-        presetSelect.value = 'custom';
-        applyEffects();
-      });
+    [noiseSlider, qualitySlider, linesSlider, glitchSlider, gridSlider,
+     noiseColorInput, captionText, captionGlitch, captionX, captionY].forEach(el => {
+      el.addEventListener('input', () => applyEffects());
     });
 
     document.getElementById('save').onclick = () => {
       const link = document.createElement('a');
       link.download = 'retro_image.png';
-      link.href = canvas.toDataURL();
+      link.href = canvas.toDataURL('image/png');
       link.click();
     };
 
