@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Retro LCD Photo Editor (HTML)</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
+    canvas { border: 1px solid #666; margin-top: 10px; }
+    .controls { margin: 10px auto; width: 80%; text-align: left; }
+    .slider-group { margin: 10px 0; }
+    input[type=range] { width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>🕹️ Retro LCD Photo Editor</h1>
+  <input type="file" id="upload" accept="image/*"><br>
+  <canvas id="canvas" width="512" height="384"></canvas>
+
+  <div class="controls">
+    <div class="slider-group">
+      <label>Noise Level: <span id="noiseVal">15</span>%</label>
+      <input type="range" id="noise" min="0" max="100" value="15">
+    </div>
+    <div class="slider-group">
+      <label>Quality (Pixelate): <span id="qualityVal">4</span></label>
+      <input type="range" id="quality" min="1" max="20" value="4">
+    </div>
+    <div class="slider-group">
+      <label>Line Intensity: <span id="linesVal">30</span></label>
+      <input type="range" id="lines" min="0" max="255" value="30">
+    </div>
+    <button id="save">💾 Save Image</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let originalImage = null;
+
+    const noiseSlider = document.getElementById('noise');
+    const qualitySlider = document.getElementById('quality');
+    const linesSlider = document.getElementById('lines');
+
+    document.getElementById('noise').oninput = () => document.getElementById('noiseVal').innerText = noiseSlider.value;
+    document.getElementById('quality').oninput = () => document.getElementById('qualityVal').innerText = qualitySlider.value;
+    document.getElementById('lines').oninput = () => document.getElementById('linesVal').innerText = linesSlider.value;
+
+    function applyEffects() {
+      if (!originalImage) return;
+      const quality = parseInt(qualitySlider.value);
+      const noiseLevel = parseInt(noiseSlider.value);
+      const lineIntensity = parseInt(linesSlider.value);
+
+      // Resize to small canvas and back for pixelation
+      const temp = document.createElement('canvas');
+      const tctx = temp.getContext('2d');
+      temp.width = canvas.width / quality;
+      temp.height = canvas.height / quality;
+      tctx.drawImage(originalImage, 0, 0, temp.width, temp.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, canvas.width, canvas.height);
+
+      // Convert to grayscale
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = 0.3 * data[i] + 0.59 * data[i+1] + 0.11 * data[i+2];
+        data[i] = data[i+1] = data[i+2] = gray;
+      }
+
+      // Add noise
+      for (let i = 0; i < data.length; i += 4) {
+        const n = (Math.random() - 0.5) * noiseLevel;
+        data[i] += n;
+        data[i+1] += n;
+        data[i+2] += n;
+      }
+
+      // Add scanlines
+      for (let y = 0; y < canvas.height; y += 3) {
+        for (let x = 0; x < canvas.width; x++) {
+          const index = (y * canvas.width + x) * 4;
+          data[index] = Math.max(0, data[index] - lineIntensity);
+          data[index+1] = Math.max(0, data[index+1] - lineIntensity);
+          data[index+2] = Math.max(0, data[index+2] - lineIntensity);
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      // Timestamp
+      ctx.fillStyle = 'white';
+      ctx.font = '12px monospace';
+      ctx.fillText(new Date().toLocaleString(), 10, 20);
+    }
+
+    document.getElementById('upload').onchange = function(e) {
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+          originalImage = img;
+          applyEffects();
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    };
+
+    noiseSlider.addEventListener('input', applyEffects);
+    qualitySlider.addEventListener('input', applyEffects);
+    linesSlider.addEventListener('input', applyEffects);
+
+    document.getElementById('save').onclick = () => {
+      const link = document.createElement('a');
+      link.download = 'retro_image.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    };
+  </script>
+</body>
+</html>
