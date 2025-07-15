@@ -5,8 +5,8 @@
   <title>Retro LCD Photo Editor (HTML)</title>
   <style>
     body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
-    canvas { border: 1px solid #666; margin-top: 10px; transition: transform 0.3s ease; }
-    .controls { margin: 10px auto; width: 80%; text-align: left; }
+    canvas { border: 1px solid #666; margin-top: 10px; max-width: 100%; height: auto; }
+    .controls { margin: 10px auto; width: 80%; text-align: left; max-width: 1000px; }
     .slider-group, .preset-group { margin: 10px 0; }
     input[type=range], select { width: 100%; }
   </style>
@@ -14,7 +14,7 @@
 <body>
   <h1>🕹️ Retro LCD Photo Editor</h1>
   <input type="file" id="upload" accept="image/*"><br>
-  <canvas id="canvas" width="512" height="384"></canvas>
+  <canvas id="canvas"></canvas>
 
   <div class="controls">
     <div class="slider-group">
@@ -30,8 +30,8 @@
       <input type="range" id="lines" min="0" max="255" value="30">
     </div>
     <div class="slider-group">
-      <label>Perspective: <span id="perspVal">0</span> deg</label>
-      <input type="range" id="perspective" min="-30" max="30" value="0">
+      <label>Lens Distortion (Radial): <span id="lensVal">0</span></label>
+      <input type="range" id="lens" min="-1" max="1" step="0.01" value="0">
     </div>
     <div class="slider-group">
       <label>Noise Color (RGB Tint):</label>
@@ -57,14 +57,14 @@
     const noiseSlider = document.getElementById('noise');
     const qualitySlider = document.getElementById('quality');
     const linesSlider = document.getElementById('lines');
-    const perspSlider = document.getElementById('perspective');
+    const lensSlider = document.getElementById('lens');
     const noiseColorInput = document.getElementById('noiseColor');
     const presetSelect = document.getElementById('preset');
 
     document.getElementById('noise').oninput = () => document.getElementById('noiseVal').innerText = noiseSlider.value;
     document.getElementById('quality').oninput = () => document.getElementById('qualityVal').innerText = qualitySlider.value;
     document.getElementById('lines').oninput = () => document.getElementById('linesVal').innerText = linesSlider.value;
-    document.getElementById('perspective').oninput = () => document.getElementById('perspVal').innerText = perspSlider.value;
+    document.getElementById('lens').oninput = () => document.getElementById('lensVal').innerText = lensSlider.value;
 
     presetSelect.onchange = () => {
       const preset = presetSelect.value;
@@ -72,27 +72,53 @@
         noiseSlider.value = 10;
         qualitySlider.value = 4;
         linesSlider.value = 20;
-        perspSlider.value = 0;
+        lensSlider.value = 0;
         noiseColorInput.value = '#00ff00';
       } else if (preset === 'security') {
         noiseSlider.value = 25;
         qualitySlider.value = 8;
         linesSlider.value = 40;
-        perspSlider.value = -10;
+        lensSlider.value = -0.3;
         noiseColorInput.value = '#ffffff';
       } else if (preset === 'vhs') {
         noiseSlider.value = 35;
         qualitySlider.value = 6;
         linesSlider.value = 60;
-        perspSlider.value = 10;
+        lensSlider.value = 0.5;
         noiseColorInput.value = '#ff00ff';
       }
-      document.getElementById('noiseVal').innerText = noiseSlider.value;
-      document.getElementById('qualityVal').innerText = qualitySlider.value;
-      document.getElementById('linesVal').innerText = linesSlider.value;
-      document.getElementById('perspVal').innerText = perspSlider.value;
       applyEffects();
     };
+
+    function applyLensDistortion(imgData, strength) {
+      if (strength === 0) return imgData;
+      const w = imgData.width;
+      const h = imgData.height;
+      const src = imgData.data;
+      const output = new Uint8ClampedArray(src.length);
+      const cx = w / 2;
+      const cy = h / 2;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const dx = x - cx;
+          const dy = y - cy;
+          const r = Math.sqrt(dx * dx + dy * dy);
+          const factor = 1 + strength * (r / Math.max(cx, cy)) ** 2;
+          const sx = Math.round(cx + dx / factor);
+          const sy = Math.round(cy + dy / factor);
+          if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
+            const dstIdx = (y * w + x) * 4;
+            const srcIdx = (sy * w + sx) * 4;
+            output[dstIdx] = src[srcIdx];
+            output[dstIdx+1] = src[srcIdx+1];
+            output[dstIdx+2] = src[srcIdx+2];
+            output[dstIdx+3] = src[srcIdx+3];
+          }
+        }
+      }
+      imgData.data.set(output);
+      return imgData;
+    }
 
     function applyEffects() {
       if (!originalImage) return;
@@ -100,47 +126,49 @@
       const noiseLevel = parseInt(noiseSlider.value);
       const lineIntensity = parseInt(linesSlider.value);
       const noiseColor = hexToRgb(noiseColorInput.value);
+      const lens = parseFloat(lensSlider.value);
 
-      // pixelate
+      const w = originalImage.naturalWidth;
+      const h = originalImage.naturalHeight;
+      canvas.width = w;
+      canvas.height = h;
+
       const temp = document.createElement('canvas');
       const tctx = temp.getContext('2d');
-      temp.width = canvas.width / quality;
-      temp.height = canvas.height / quality;
+      temp.width = w / quality;
+      temp.height = h / quality;
       tctx.drawImage(originalImage, 0, 0, temp.width, temp.height);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, canvas.width, canvas.height);
 
-      // grayscale + noise + lines
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, w, h);
+
+      let imgData = ctx.getImageData(0, 0, w, h);
       const data = imgData.data;
+
       for (let i = 0; i < data.length; i += 4) {
         const gray = 0.3 * data[i] + 0.59 * data[i+1] + 0.11 * data[i+2];
         data[i] = data[i+1] = data[i+2] = gray;
-
         const n = (Math.random() - 0.5) * noiseLevel;
         data[i] += n * (noiseColor.r / 255);
         data[i+1] += n * (noiseColor.g / 255);
         data[i+2] += n * (noiseColor.b / 255);
       }
 
-      for (let y = 0; y < canvas.height; y += 3) {
-        for (let x = 0; x < canvas.width; x++) {
-          const index = (y * canvas.width + x) * 4;
-          data[index] = Math.max(0, data[index] - lineIntensity);
-          data[index+1] = Math.max(0, data[index+1] - lineIntensity);
-          data[index+2] = Math.max(0, data[index+2] - lineIntensity);
+      for (let y = 0; y < h; y += 3) {
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4;
+          data[idx] = Math.max(0, data[idx] - lineIntensity);
+          data[idx+1] = Math.max(0, data[idx+1] - lineIntensity);
+          data[idx+2] = Math.max(0, data[idx+2] - lineIntensity);
         }
       }
 
+      imgData = applyLensDistortion(imgData, lens);
       ctx.putImageData(imgData, 0, 0);
 
-      // timestamp
       ctx.fillStyle = 'white';
-      ctx.font = '12px monospace';
+      ctx.font = '16px monospace';
       ctx.fillText(new Date().toLocaleString(), 10, 20);
-
-      // perspective (simulated via CSS transform)
-      canvas.style.transform = `perspective(600px) rotateY(${perspSlider.value}deg)`;
     }
 
     document.getElementById('upload').onchange = function(e) {
@@ -156,7 +184,7 @@
       reader.readAsDataURL(e.target.files[0]);
     };
 
-    [noiseSlider, qualitySlider, linesSlider, perspSlider, noiseColorInput].forEach(el => {
+    [noiseSlider, qualitySlider, linesSlider, lensSlider, noiseColorInput].forEach(el => {
       el.addEventListener('input', () => {
         presetSelect.value = 'custom';
         applyEffects();
