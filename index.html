@@ -10,6 +10,14 @@
     .controls { margin: 20px auto; width: 360px; text-align: left; }
     .slider-group, .text-group { margin: 10px 0; }
     input[type=range], input[type=text], select { width: 100%; }
+    #cropOverlay {
+      position: absolute;
+      width: 108px;
+      height: 192px;
+      border: 2px dashed red;
+      pointer-events: auto;
+      cursor: move;
+    }
   </style>
 </head>
 <body>
@@ -17,6 +25,7 @@
   <input type="file" id="upload" accept="image/*"><br>
   <div id="canvasContainer">
     <canvas id="canvas" width="1080" height="1920"></canvas>
+    <div id="cropOverlay" style="display:none;"></div>
   </div>
 
   <div class="controls">
@@ -71,16 +80,55 @@
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const container = document.getElementById('canvasContainer');
+    const cropOverlay = document.getElementById('cropOverlay');
     const cropBtn = document.getElementById('startCrop');
     const applyCropBtn = document.getElementById('applyCrop');
     const upload = document.getElementById('upload');
 
     let originalImage = null;
-    let cropping = false;
-    let cropRect = { x: 0, y: 0, width: 1080, height: 1920 };
     let imageToEdit = null;
 
-    const getVal = id => parseFloat(document.getElementById(id).value);
+    let offsetX, offsetY, isDragging = false;
+
+    cropBtn.onclick = () => {
+      cropOverlay.style.display = 'block';
+      cropOverlay.style.left = '126px';
+      cropOverlay.style.top = '224px';
+    };
+
+    cropOverlay.addEventListener('mousedown', e => {
+      isDragging = true;
+      offsetX = e.offsetX;
+      offsetY = e.offsetY;
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (isDragging) {
+        const rect = container.getBoundingClientRect();
+        cropOverlay.style.left = `${e.clientX - rect.left - offsetX}px`;
+        cropOverlay.style.top = `${e.clientY - rect.top - offsetY}px`;
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+
+    applyCropBtn.onclick = () => {
+      const rect = cropOverlay.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const cropX = Math.max(0, (rect.left - containerRect.left) * 3);
+      const cropY = Math.max(0, (rect.top - containerRect.top) * 3);
+      const cropped = document.createElement('canvas');
+      cropped.width = 1080;
+      cropped.height = 1920;
+      const cctx = cropped.getContext('2d');
+      cctx.drawImage(canvas, cropX, cropY, 1080, 1920, 0, 0, 1080, 1920);
+      imageToEdit = new Image();
+      imageToEdit.onload = () => renderFrame();
+      imageToEdit.src = cropped.toDataURL();
+      cropOverlay.style.display = 'none';
+    };
 
     upload.onchange = e => {
       const reader = new FileReader();
@@ -96,32 +144,15 @@
       reader.readAsDataURL(e.target.files[0]);
     };
 
-    cropBtn.onclick = () => {
-      cropping = true;
-      drawCropRect();
-    };
-
-    applyCropBtn.onclick = () => {
-      cropping = false;
-      const cropped = document.createElement('canvas');
-      cropped.width = 1080;
-      cropped.height = 1920;
-      const cctx = cropped.getContext('2d');
-      cctx.drawImage(originalImage, cropRect.x, cropRect.y, cropRect.width, cropRect.height, 0, 0, 1080, 1920);
-      imageToEdit = new Image();
-      imageToEdit.onload = () => renderFrame();
-      imageToEdit.src = cropped.toDataURL();
-    };
-
     function renderFrame() {
       if (!imageToEdit) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const quality = getVal('quality');
-      const glitchFreq = getVal('glitchFreq');
-      const globalGlitch = getVal('glitch');
-      const captionGlitch = getVal('captionGlitch');
-      const dateGlitch = getVal('dateGlitch');
+      const quality = parseInt(document.getElementById('quality').value);
+      const glitchFreq = parseFloat(document.getElementById('glitchFreq').value);
+      const globalGlitch = parseInt(document.getElementById('glitch').value);
+      const captionGlitch = parseInt(document.getElementById('captionGlitch').value);
+      const dateGlitch = parseInt(document.getElementById('dateGlitch').value);
 
       const temp = document.createElement('canvas');
       const tctx = temp.getContext('2d');
@@ -132,7 +163,7 @@
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, canvas.width, canvas.height);
 
-      // global glitch
+      // Glitch global
       for (let i = 0; i < globalGlitch; i++) {
         if (Math.random() < glitchFreq) {
           const y = Math.floor(Math.random() * canvas.height);
@@ -143,7 +174,7 @@
         }
       }
 
-      // timestamp
+      // Timestamp
       const ts = new Date().toLocaleString();
       ctx.font = '28px monospace';
       ctx.fillStyle = 'white';
@@ -160,10 +191,10 @@
         ctx.putImageData(slice, tx + Math.random() * 10 - 5, ry);
       }
 
-      // caption
+      // Caption
       const text = document.getElementById('captionText').value;
-      const cx = (getVal('captionX') / 100) * canvas.width;
-      const cy = (getVal('captionY') / 100) * canvas.height;
+      const cx = (parseFloat(document.getElementById('captionX').value) / 100) * canvas.width;
+      const cy = (parseFloat(document.getElementById('captionY').value) / 100) * canvas.height;
       ctx.font = '42px Impact';
       ctx.fillStyle = 'yellow';
       ctx.shadowColor = 'black';
@@ -180,7 +211,7 @@
     }
 
     document.querySelectorAll('input[type=range], input[type=text]').forEach(input => {
-      input.addEventListener('input', () => renderFrame());
+      input.addEventListener('input', renderFrame);
     });
 
     document.getElementById('save').onclick = () => {
