@@ -5,9 +5,9 @@
   <title>Retro LCD Photo Editor (HTML)</title>
   <style>
     body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
-    #canvasContainer { width: 960px; max-height: 540px; overflow: auto; margin: 0 auto; border: 2px solid #444; background: #000; }
-    canvas { display: block; margin: 0 auto; }
-    .controls { margin: 10px auto; width: 960px; text-align: left; }
+    #canvasContainer { width: 960px; height: 540px; overflow: hidden; margin: 0 auto; border: 2px solid #444; background: #000; position: relative; }
+    canvas { display: block; margin: 0 auto; position: absolute; top: 0; left: 0; }
+    .controls { margin: 20px auto; width: 960px; text-align: left; }
     .slider-group, .text-group { margin: 10px 0; }
     input[type=range], input[type=text], select { width: 100%; }
   </style>
@@ -15,7 +15,7 @@
 <body>
   <h1>🕹️ Retro LCD Photo Editor</h1>
   <input type="file" id="upload" accept="image/*"><br>
-  <div id="canvasContainer"><canvas id="canvas"></canvas></div>
+  <div id="canvasContainer"><canvas id="canvas" width="960" height="540"></canvas></div>
 
   <div class="controls">
     <div class="slider-group">
@@ -113,8 +113,6 @@
 
     function renderFrame(flicker = false) {
       updateValueLabels();
-      const w = originalImage.naturalWidth;
-      const h = originalImage.naturalHeight;
       const quality = values.quality();
       const noiseLevel = values.noise();
       const lineIntensity = values.lines();
@@ -128,10 +126,13 @@
       const captionYPercent = values.captionY();
       const noiseColor = hexToRgb(noiseColorInput.value);
 
+      const w = 960;
+      const h = 540;
       canvas.width = temp.width = w;
       canvas.height = temp.height = h;
 
-      tctx.drawImage(originalImage, 0, 0);
+      tctx.clearRect(0, 0, w, h);
+      tctx.drawImage(originalImage, 0, 0, w, h);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(temp, 0, 0, w / quality, h / quality, 0, 0, w, h);
 
@@ -169,7 +170,7 @@
 
       ctx.putImageData(imgData, 0, 0);
 
-      // Timestamp (restored original font size, lowered position)
+      // Timestamp
       ctx.font = '20px monospace';
       ctx.fillStyle = flickerLevel ? `rgba(255,255,255,${1 - Math.random() * flickerLevel / 10})` : 'white';
       const ts = new Date().toLocaleString();
